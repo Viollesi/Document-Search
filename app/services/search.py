@@ -84,10 +84,9 @@ async def delete_document_from_index(
 ) -> bool:
     """Удаляет документ из индекса по id."""
     settings = get_settings()
-    response = await client.delete(
+    response = await client.options(ignore_status=404).delete(
         index=settings.elasticsearch_index,
         id=document_id,
-        ignore_status=[404],
     )
 
     return response.get("result") == "deleted"
