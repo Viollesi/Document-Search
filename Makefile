@@ -1,4 +1,4 @@
-.PHONY: up down migrate import-data test
+.PHONY: up down migrate import-data test docs
 
 up:
 	docker compose up -d --build
@@ -14,3 +14,6 @@ import-data:
 
 test:
 	docker compose run --rm api pytest
+
+docs:
+	python -m app.scripts.generate_openapi
