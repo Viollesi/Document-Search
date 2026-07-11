@@ -1,39 +1,158 @@
 # Document Search
 
-Простой поисковик по текстам документов.
+Простой сервис поиска по текстам документов.
 
-## Локальный запуск
+## Стек
 
-Перед импортом данных положите CSV-файл в директорию:
+- Python 3.12
+- FastAPI
+- PostgreSQL
+- SQLAlchemy async
+- asyncpg
+- Alembic
+- Elasticsearch
+- Pydantic Settings
+- pytest, pytest-asyncio, httpx
+- Docker, docker-compose
+
+## Возможности
+
+- `GET /documents/search?q=...` — поиск документов по тексту.
+- `DELETE /documents/{document_id}` — удаление документа из PostgreSQL и Elasticsearch.
+- `GET /health` — проверка доступности API, PostgreSQL и Elasticsearch.
+- `app/scripts/import_data.py` — импорт CSV в PostgreSQL и Elasticsearch.
+
+## Настройка окружения
+
+Скопируйте пример переменных окружения:
+
+```bash
+cp .env.example .env
+```
+
+Пример `.env`:
+
+```env
+APP_NAME=Document Search
+APP_VERSION=0.1.0
+DATABASE_URL=postgresql+asyncpg://postgres:postgres@localhost:5432/documents
+ELASTICSEARCH_URL=http://localhost:9200
+ELASTICSEARCH_INDEX=documents
+DATASET_URL=file:///app/data/posts.csv
+```
+
+При запуске через Docker значения подключения к PostgreSQL и Elasticsearch уже заданы в `docker-compose.yml`.
+
+## CSV-файл
+
+CSV-файл не хранится в репозитории. Перед импортом положите его сюда:
 
 ```text
-data/documents.csv
+data/posts.csv
 ```
 
-Сам CSV-файл не хранится в git. В репозитории есть только пустая директория `data/`.
-
-Для запуска внутри Docker будет использоваться путь:
+В Docker эта директория монтируется как `/app/data`, поэтому значение для импорта:
 
 ```env
-DATASET_URL=file:///app/data/documents.csv
+DATASET_URL=file:///app/data/posts.csv
 ```
 
-При локальном запуске без Docker можно указать абсолютный путь к файлу:
 
-```env
-DATASET_URL=file:///absolute/path/to/test-work/data/documents.csv
+## Запуск в Docker
+
+Поднимите сервисы:
+
+```bash
+make up
 ```
+
+Примените миграции:
+
+```bash
+make migrate
+```
+
+Импортируйте данные:
+
+```bash
+make import-data
+```
+
+API будет доступен по адресу:
+
+```text
+http://localhost:8000
+```
+
+## Примеры запросов
+
+Healthcheck:
+
+```bash
+curl http://localhost:8000/health
+```
+
+Поиск:
+
+```bash
+curl "http://localhost:8000/documents/search?q=example"
+```
+
+Удаление:
+
+```bash
+curl -X DELETE http://localhost:8000/documents/1
+```
+
+## OpenAPI
+
+OpenAPI-документация лежит в корне проекта:
+
+```text
+docs.json
+```
+
+Сгенерировать файл заново:
+
+```bash
+make docs
+```
+
+Также после запуска API доступны стандартные страницы FastAPI:
+
+```text
+http://localhost:8000/docs
+http://localhost:8000/redoc
+```
+
+## Тесты
+
+Запуск тестов в Docker:
+
+```bash
+make test
+```
+
+Локальный запуск:
 
 ```bash
 python -m venv .venv
 source .venv/bin/activate
 pip install -e ".[dev]"
-cp .env.example .env
-uvicorn app.main:app --reload
+pytest
 ```
 
-После запуска приложение доступно по адресу:
+## Остановка
 
-```text
-http://localhost:8000
+Остановить контейнеры:
+
+```bash
+make down
 ```
+
+## Примечания
+
+- CSV не читается при поисковом запросе, он используется только на этапе импорта.
+- Elasticsearch хранит только `id` и `text`.
+- Полные документы возвращаются из PostgreSQL.
+- Повторный импорт идемпотентен: существующие документы обновляются по `id`.
