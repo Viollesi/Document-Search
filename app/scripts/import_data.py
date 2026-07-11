@@ -27,7 +27,7 @@ class DocumentRow(TypedDict):
     created_date: datetime
 
 
-REQUIRED_FIELDS = ("id", "rubrics", "text", "created_date")
+REQUIRED_FIELDS = ("text", "created_date", "rubrics")
 
 
 async def main() -> None:
@@ -96,7 +96,7 @@ def parse_documents(csv_content: str) -> list[DocumentRow]:
 
 
 def parse_document_row(row: dict[str, str], row_number: int) -> DocumentRow:
-    document_id = (row.get("id") or "").strip()
+    document_id = (row.get("id") or str(row_number - 1)).strip()
     text = row.get("text") or ""
     created_date = (row.get("created_date") or "").strip()
 

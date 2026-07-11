@@ -8,7 +8,7 @@ services:
       DATABASE_URL: postgresql+asyncpg://postgres:postgres@postgres:5432/documents
       ELASTICSEARCH_URL: http://elasticsearch:9200
       ELASTICSEARCH_INDEX: documents
-      DATASET_URL: file:///app/data/documents.csv
+      DATASET_URL: file:///app/data/posts.csv
     ports:
       - "8000:8000"
     volumes:
