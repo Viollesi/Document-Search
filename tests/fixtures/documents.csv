@@ -1,0 +1,23 @@
+text,created_date,rubrics
+common text 01,2024-01-01T00:00:00,"['one']"
+common text 02,2024-01-02T00:00:00Z,"['one', 'two']"
+common text 03,2024-01-03T03:00:00+03:00,one;two
+common text 04,2024-01-04T00:00:00,
+common text 05,2024-01-05T00:00:00,['one']
+common text 06,2024-01-06T00:00:00,['one']
+common text 07,2024-01-07T00:00:00,['one']
+common text 08,2024-01-08T00:00:00,['one']
+common text 09,2024-01-09T00:00:00,['one']
+common text 10,2024-01-10T00:00:00,['one']
+common text 11,2024-01-11T00:00:00,['one']
+common text 12,2024-01-12T00:00:00,['one']
+common text 13,2024-01-13T00:00:00,['one']
+common text 14,2024-01-14T00:00:00,['one']
+common text 15,2024-01-15T00:00:00,['one']
+common text 16,2024-01-16T00:00:00,['one']
+common text 17,2024-01-17T00:00:00,['one']
+common text 18,2024-01-18T00:00:00,['one']
+common text 19,2024-01-19T00:00:00,['one']
+common text 20,2024-01-20T00:00:00,['one']
+common text 21,2024-01-21T00:00:00,['one']
+common text 22,2024-01-22T00:00:00,['one']

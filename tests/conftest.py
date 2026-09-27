@@ -8,8 +8,15 @@ from app.main import app
 from app.search.client import get_elasticsearch_client
 
 
-async def override_session() -> AsyncGenerator[object, None]:
-    yield object()
+class FakeSession:
+    def __init__(self) -> None:
+        self.events: list[str] = []
+
+    async def commit(self) -> None:
+        self.events.append("commit")
+
+    async def rollback(self) -> None:
+        self.events.append("rollback")
 
 
 async def override_elasticsearch_client() -> AsyncGenerator[object, None]:
@@ -17,7 +24,15 @@ async def override_elasticsearch_client() -> AsyncGenerator[object, None]:
 
 
 @pytest.fixture
-async def client() -> AsyncGenerator[httpx.AsyncClient, None]:
+def client_session() -> FakeSession:
+    return FakeSession()
+
+
+@pytest.fixture
+async def client(client_session: FakeSession) -> AsyncGenerator[httpx.AsyncClient, None]:
+    async def override_session() -> AsyncGenerator[FakeSession, None]:
+        yield client_session
+
     app.dependency_overrides[get_session] = override_session
     app.dependency_overrides[get_elasticsearch_client] = override_elasticsearch_client
 

@@ -2,6 +2,7 @@ from collections.abc import Iterable
 from typing import TypedDict
 
 from elasticsearch import AsyncElasticsearch
+from elasticsearch.exceptions import BadRequestError
 from elasticsearch.helpers import async_bulk
 
 from app.core.config import get_settings
@@ -25,17 +26,24 @@ async def ensure_documents_index(client: AsyncElasticsearch) -> None:
     settings = get_settings()
     exists = await client.indices.exists(index=settings.elasticsearch_index)
 
-    if not exists:
+    if exists:
+        return
+
+    try:
         await client.indices.create(
             index=settings.elasticsearch_index,
             mappings=INDEX_MAPPINGS,
         )
+    except BadRequestError as error:
+        if error.error != "resource_already_exists_exception":
+            raise
 
 
 async def search_document_ids(
     client: AsyncElasticsearch,
     query: str,
     limit: int = 20,
+    offset: int = 0,
 ) -> list[str]:
     """Ищет документы в индексе и возвращает только их id."""
     settings = get_settings()
@@ -43,6 +51,7 @@ async def search_document_ids(
         index=settings.elasticsearch_index,
         query={"match": {"text": query}},
         size=limit,
+        from_=offset,
         _source=["id"],
     )
 
@@ -74,7 +83,22 @@ async def bulk_index_documents(
     if not actions:
         return 0
 
-    indexed_count, _ = await async_bulk(client, actions)
+    indexed_count, errors = await async_bulk(
+        client,
+        actions,
+        raise_on_error=False,
+        refresh="wait_for",
+    )
+    if errors:
+        failed_ids = [
+            str(next(iter(error.values())).get("_id", "unknown"))
+            for error in errors[:5]
+        ]
+        raise RuntimeError(
+            "Elasticsearch bulk-индексация завершилась с ошибками для ID: "
+            + ", ".join(failed_ids),
+        )
+
     return indexed_count
 
 
@@ -87,6 +111,7 @@ async def delete_document_from_index(
     response = await client.options(ignore_status=404).delete(
         index=settings.elasticsearch_index,
         id=document_id,
+        refresh="wait_for",
     )
 
     return response.get("result") == "deleted"

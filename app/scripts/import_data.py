@@ -2,7 +2,7 @@ import ast
 import asyncio
 import csv
 import logging
-from datetime import datetime
+from datetime import UTC, datetime
 from io import StringIO
 from pathlib import Path
 from typing import TypedDict
@@ -38,15 +38,25 @@ async def main() -> None:
         if not settings.dataset_url:
             raise ValueError("Не задана переменная окружения DATASET_URL")
 
-        csv_content = await read_csv_content(settings.dataset_url)
-        documents = parse_documents(csv_content)
+        try:
+            csv_content = await read_csv_content(settings.dataset_url)
+            documents = parse_documents(csv_content)
+        except Exception as error:
+            raise RuntimeError(f"Ошибка чтения или разбора CSV: {error}") from error
 
         if not documents:
             logger.info("CSV не содержит документов для импорта")
             return
 
-        await upsert_documents(documents)
-        indexed_count = await index_documents(documents)
+        try:
+            await upsert_documents(documents)
+        except Exception as error:
+            raise RuntimeError(f"Ошибка сохранения в PostgreSQL: {error}") from error
+
+        try:
+            indexed_count = await index_documents(documents)
+        except Exception as error:
+            raise RuntimeError(f"Ошибка индексации в Elasticsearch: {error}") from error
 
         logger.info(
             "Импорт завершён: документов в БД %s, в индексе %s",
@@ -89,58 +99,91 @@ def parse_documents(csv_content: str) -> list[DocumentRow]:
         raise ValueError(f"В CSV отсутствуют обязательные поля: {fields}")
 
     documents: list[DocumentRow] = []
+    document_rows: dict[str, int] = {}
     for row_number, row in enumerate(reader, start=2):
-        documents.append(parse_document_row(row, row_number))
+        document = parse_document_row(row, row_number)
+        previous_row = document_rows.get(document["id"])
+        if previous_row is not None:
+            raise ValueError(
+                f"В строке {row_number} дублируется id {document['id']!r} "
+                f"из строки {previous_row}",
+            )
+        document_rows[document["id"]] = row_number
+        documents.append(document)
 
     return documents
 
 
 def parse_document_row(row: dict[str, str], row_number: int) -> DocumentRow:
-    document_id = (row.get("id") or str(row_number - 1)).strip()
+    raw_document_id = row.get("id")
+    document_id = (raw_document_id or "").strip() or str(row_number - 1)
     text = row.get("text") or ""
     created_date = (row.get("created_date") or "").strip()
-
-    if not document_id:
-        raise ValueError(f"В строке {row_number} не заполнено поле id")
 
     if not created_date:
         raise ValueError(f"В строке {row_number} не заполнено поле created_date")
 
     return {
         "id": document_id,
-        "rubrics": parse_rubrics(row.get("rubrics") or ""),
+        "rubrics": parse_rubrics(row.get("rubrics") or "", row_number),
         "text": text,
         "created_date": parse_created_date(created_date, row_number),
     }
 
 
-def parse_rubrics(value: str) -> list[str]:
+def parse_rubrics(value: str, row_number: int | None = None) -> list[str]:
     value = value.strip()
 
     if not value:
         return []
 
-    try:
-        parsed_value = ast.literal_eval(value)
-    except (ValueError, SyntaxError):
-        parsed_value = None
+    if value.startswith("[") or value.endswith("]"):
+        try:
+            parsed_value = ast.literal_eval(value)
+        except (ValueError, SyntaxError) as error:
+            raise _rubrics_error(row_number) from error
 
-    if isinstance(parsed_value, list):
-        return [str(item).strip() for item in parsed_value if str(item).strip()]
+        if not isinstance(parsed_value, list) or any(
+            not isinstance(item, str) for item in parsed_value
+        ):
+            raise _rubrics_error(row_number)
+        return [item.strip() for item in parsed_value if item.strip()]
+
+    if any(character in value for character in "[]{}()"):
+        raise _rubrics_error(row_number)
 
     separator = ";" if ";" in value else ","
-    return [item.strip().strip("'\"") for item in value.split(separator) if item.strip()]
+    rubrics = []
+    for item in value.split(separator):
+        item = item.strip()
+        if "'" in item or '"' in item:
+            if len(item) < 2 or item[0] not in "'\"" or item[-1] != item[0]:
+                raise _rubrics_error(row_number)
+            item = item[1:-1].strip()
+        rubrics.append(item)
+    if any(not item for item in rubrics):
+        raise _rubrics_error(row_number)
+    return rubrics
+
+
+def _rubrics_error(row_number: int | None) -> ValueError:
+    location = f" в строке {row_number}" if row_number is not None else ""
+    return ValueError(f"Некорректный формат поля rubrics{location}")
 
 
 def parse_created_date(value: str, row_number: int) -> datetime:
-    normalized_value = value.replace("Z", "+00:00")
+    normalized_value = value[:-1] + "+00:00" if value.endswith(("Z", "z")) else value
 
     try:
-        return datetime.fromisoformat(normalized_value)
+        parsed_date = datetime.fromisoformat(normalized_value)
     except ValueError as error:
         raise ValueError(
             f"В строке {row_number} некорректное поле created_date: {value}",
         ) from error
+
+    if parsed_date.tzinfo is None:
+        return parsed_date.replace(tzinfo=UTC)
+    return parsed_date.astimezone(UTC)
 
 
 async def upsert_documents(documents: list[DocumentRow]) -> None:
@@ -156,8 +199,8 @@ async def upsert_documents(documents: list[DocumentRow]) -> None:
     )
 
     async with async_session_factory() as session:
-        await session.execute(statement)
-        await session.commit()
+        async with session.begin():
+            await session.execute(statement)
 
     logger.info("Документы сохранены в PostgreSQL: %s", len(documents))
 
